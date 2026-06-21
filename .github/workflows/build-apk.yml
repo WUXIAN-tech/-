@@ -124,6 +124,7 @@ jobs:
         NDK="${{ env.NDK_HOME }}"
         TOOLCHAIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64"
 
+        rm -rf ffmpeg-6.1
         tar xf ffmpeg.tar.xz
         cd ffmpeg-6.1
 
