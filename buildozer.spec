@@ -49,7 +49,7 @@ presplash.filename = %(source.dir)s/presplash.png
 icon.filename = %(source.dir)s/icon.png
 
 # (list) Pattern to whitelist for the whole project
-source.include_patterns = assets/*,ffmpeg/**/*
+source.include_patterns = ffmpeg/arm64-v8a/*
 
 # (bool) Accept Android SDK license automatically (needed for CI)
 android.accept_sdk_license = True

@@ -1,6 +1,7 @@
 """Kivy app for extracting MP3 audio from MP4 videos."""
 
 import os
+import sys
 import threading
 
 from kivy.app import App
@@ -10,9 +11,17 @@ from kivy.uix.button import Button
 from kivy.uix.progressbar import ProgressBar
 from kivy.uix.popup import Popup
 from kivy.clock import Clock
-from kivy.utils import platform
-
 from converter import extract_audio
+
+
+def _output_dir():
+    """Return writable output directory. On Android, use app private storage."""
+    if hasattr(sys, 'android'):
+        from android.storage import app_storage_path
+        out = os.path.join(app_storage_path(), 'mp3_output')
+        os.makedirs(out, exist_ok=True)
+        return out
+    return None  # Use same dir as input file
 
 
 class AudioExtractorUI(BoxLayout):
@@ -77,19 +86,11 @@ class AudioExtractorUI(BoxLayout):
         self._selected_file = None
 
     def _pick_file(self, instance):
-        if platform == 'android':
-            from plyer import filechooser
-            filechooser.open_file(
-                on_selection=self._on_file_selected,
-                filters=['*.mp4', '*.MP4']
-            )
-        else:
-            # Desktop fallback
-            from plyer import filechooser
-            filechooser.open_file(
-                on_selection=self._on_file_selected,
-                filters=['*.mp4', '*.MP4']
-            )
+        from plyer import filechooser
+        filechooser.open_file(
+            on_selection=self._on_file_selected,
+            filters=['*.mp4', '*.MP4']
+        )
 
     def _on_file_selected(self, selection):
         if not selection:
@@ -125,6 +126,7 @@ class AudioExtractorUI(BoxLayout):
 
             output = extract_audio(
                 self._selected_file,
+                output_dir=_output_dir(),
                 progress_callback=on_progress
             )
             Clock.schedule_once(

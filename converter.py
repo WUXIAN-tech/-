@@ -112,14 +112,18 @@ def extract_audio(input_path, output_dir=None, quality='320k', progress_callback
 
 
 def _get_duration(path):
-    """Get media duration in seconds using ffprobe."""
+    """Get media duration in seconds using ffmpeg."""
     try:
-        ffprobe = _ffmpeg_binary().replace('ffmpeg', 'ffprobe')
         result = subprocess.run(
-            [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
-             '-of', 'default=noprint_wrappers=1:nokey=1', path],
+            [_ffmpeg_binary(), '-i', path],
             capture_output=True, text=True
         )
-        return float(result.stdout.strip()) if result.stdout.strip() else 0
+        for line in result.stderr.split('\n'):
+            if 'Duration' in line:
+                # Format: "  Duration: 00:00:05.01, start: ..."
+                time_str = line.strip().split('Duration: ')[1].split(',')[0]
+                h, m, s = time_str.split(':')
+                return float(h) * 3600 + float(m) * 60 + float(s)
     except Exception:
-        return 0
+        pass
+    return 0
