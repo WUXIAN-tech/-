@@ -57,6 +57,9 @@ android.accept_sdk_license = True
 # (bool) If True, will skip building aar files
 android.skip_update = False
 
+# (list) Directories/files to skip during Python byte-compile
+android.skip_compile = lib-dynload,certifi
+
 # (str) Android logcat filters to use
 android.logcat_filters = *:S python:D
 

@@ -27,14 +27,24 @@ jobs:
     - name: Install Python build tools
       run: pip install buildozer cython
 
+    - name: Cache Android NDK
+      id: cache-ndk
+      uses: actions/cache@v4
+      with:
+        path: /tmp/ndk/android-ndk-r23c
+        key: ndk-r23c-v2
+
     - name: Download Android NDK
+      if: steps.cache-ndk.outputs.cache-hit != 'true'
       run: |
-        NDK_VERSION="r23c"
-        NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
-        wget -q "https://dl.google.com/android/repository/${NDK_ZIP}"
-        unzip -q ${NDK_ZIP}
-        echo "NDK_HOME=$(pwd)/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
-        echo "NDK downloaded to $(pwd)/android-ndk-${NDK_VERSION}"
+        mkdir -p /tmp/ndk
+        cd /tmp/ndk
+        wget -q "https://dl.google.com/android/repository/android-ndk-r23c-linux.zip"
+        unzip -q android-ndk-r23c-linux.zip
+        echo "NDK extracted to /tmp/ndk"
+
+    - name: Set NDK path
+      run: echo "NDK_HOME=/tmp/ndk/android-ndk-r23c" >> $GITHUB_ENV
 
     - name: Build LAME for Android (arm64)
       run: |
@@ -174,6 +184,13 @@ jobs:
         echo "=== ARMv7 binary ==="
         file ffmpeg/armeabi-v7a/ffmpeg
         ls -lh ffmpeg/armeabi-v7a/ffmpeg
+
+    - name: Cache Buildozer dependencies
+      uses: actions/cache@v4
+      with:
+        path: .buildozer/android/platform
+        key: buildozer-platform-v1-${{ hashFiles('buildozer.spec') }}
+        restore-keys: buildozer-platform-v1-
 
     - name: Build APK with Buildozer
       run: |
