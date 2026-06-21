@@ -187,14 +187,6 @@ set -- \
         org.gradle.wrapper.GradleWrapperMain \
         "$@"
 
-# Stop when "xeli" is not enabled
-if ! "$cygwin" && ! "$msys" ; then
-    case $- in
-        *e*) : ;; # erase is enabled, do nothing
-        *)   set -- -e "$@" ;;
-    esac
-fi
-
 # Use "xargs" to parse quoted args.
 #
 # With -n1 it outputs one arg per line, with the quotes and backslashes removed.
