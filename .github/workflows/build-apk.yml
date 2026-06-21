@@ -85,7 +85,6 @@ jobs:
           --enable-static \
           --disable-shared \
           --enable-small \
-          --disable-programs \
           --disable-doc \
           --disable-ffplay \
           --disable-ffprobe \
@@ -149,7 +148,6 @@ jobs:
           --enable-static \
           --disable-shared \
           --enable-small \
-          --disable-programs \
           --disable-doc \
           --disable-ffplay \
           --disable-ffprobe \
