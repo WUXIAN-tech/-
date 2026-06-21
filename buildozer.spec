@@ -34,7 +34,7 @@ android.api = 34
 android.minapi = 21
 
 # (int) NDK API
-android.ndk = 23
+android.ndk = 25
 
 # (str) The Android arch to build for, choices: armeabi-v7a, arm64-v8a, x86_64, x86
 android.arch = arm64-v8a
