@@ -67,7 +67,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("com.arthenica:ffmpeg-kit-min-gpl:6.0-2")
+    implementation("com.writingminds:FFmpegAndroid:0.3.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

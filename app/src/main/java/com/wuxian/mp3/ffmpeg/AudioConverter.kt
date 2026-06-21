@@ -2,13 +2,13 @@ package com.wuxian.mp3.ffmpeg
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFprobeKit
-import com.arthenica.ffmpegkit.ReturnCode
-import com.arthenica.ffmpegkit.StatisticsCallback
+import com.writingminds.ffmpeg.FFmpeg
+import com.writingminds.ffmpeg.FFmpegExecuteResponseHandler
+import com.writingminds.ffmpeg.FFmpegLoadBinaryResponseHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,28 +29,55 @@ object AudioConverter {
         val scope = CoroutineScope(Dispatchers.Main)
         return scope.launch {
             try {
-                onProgress(-1f) // indeterminate: copying phase
+                onProgress(-1f)
                 val tempInput = withContext(Dispatchers.IO) { copyUriToCache(context, inputUri) }
                 val tempOutput = File(context.cacheDir, "output_${System.currentTimeMillis()}.mp3")
 
-                val duration = withContext(Dispatchers.IO) { probeDuration(tempInput.absolutePath) }
+                val durationMs = withContext(Dispatchers.IO) { probeDuration(context, inputUri) }
 
-                val cmd = "-y -i \"${tempInput.absolutePath}\" -vn -c:a libmp3lame -b:a 320k -q:a 0 \"${tempOutput.absolutePath}\""
-
-                val statsCallback = StatisticsCallback { stats ->
-                    if (duration > 0) {
-                        val p = stats.time.toFloat() / (duration * 1000f)
-                        onProgress(p.coerceIn(0f, 1f))
+                val ffmpeg = FFmpeg.getInstance(context)
+                try {
+                    withContext(Dispatchers.IO) {
+                        ffmpeg.loadBinary(object : FFmpegLoadBinaryResponseHandler {
+                            override fun onStart() {}
+                            override fun onSuccess() {}
+                            override fun onFailure() {}
+                            override fun onFinish() {}
+                        })
                     }
+                } catch (e: Exception) {
+                    onError("加载 FFmpeg 失败: ${e.message ?: "未知"}")
+                    return@launch
                 }
 
-                val session = FFmpegKit.executeAsync(
-                    cmd,
-                    { completed ->
-                        scope.launch {
-                            val code = completed.returnCode
-                            when {
-                                ReturnCode.isSuccess(code) -> {
+                val cmd = "-y -i ${tempInput.absolutePath} -vn -c:a libmp3lame -b:a 320k ${tempOutput.absolutePath}"
+
+                withContext(Dispatchers.IO) {
+                    ffmpeg.execute(cmd, object : FFmpegExecuteResponseHandler {
+                        override fun onStart() {}
+
+                        override fun onProgress(message: String?) {
+                            if (durationMs > 0 && message != null) {
+                                parseTimeMs(message)?.let { t ->
+                                    val p = t.toFloat() / durationMs.toFloat()
+                                    onProgress(p.coerceIn(0f, 1f))
+                                }
+                            }
+                        }
+
+                        override fun onSuccess(message: String?) {}
+
+                        override fun onFailure(message: String?) {
+                            scope.launch {
+                                tempInput.delete()
+                                tempOutput.delete()
+                                onError("转换失败: ${message ?: "未知"}")
+                            }
+                        }
+
+                        override fun onFinish() {
+                            scope.launch {
+                                if (tempOutput.exists() && tempOutput.length() > 0) {
                                     try {
                                         val outUri = withContext(Dispatchers.IO) {
                                             publishToMediaStore(context, tempOutput, tempInput.nameWithoutExtension)
@@ -61,21 +88,34 @@ object AudioConverter {
                                     } catch (e: Exception) {
                                         onError("保存失败: ${e.message}")
                                     }
-                                }
-                                else -> {
-                                    tempInput.delete()
-                                    tempOutput.delete()
-                                    onError("转换失败 (code ${code.value})")
+                                } else {
+                                    onError("转换失败: 输出文件为空")
                                 }
                             }
                         }
-                    },
-                    { /* log callback - ignore */ },
-                    statsCallback,
-                )
+                    })
+                }
             } catch (e: Exception) {
                 onError("错误: ${e.message ?: "未知"}")
             }
+        }
+    }
+
+    private fun parseTimeMs(log: String): Long? {
+        val timeIdx = log.indexOf("time=")
+        if (timeIdx < 0) return null
+        val start = timeIdx + 5
+        val end = log.indexOf(' ', start)
+        val timeStr = if (end < 0) log.substring(start) else log.substring(start, end)
+        val parts = timeStr.split(":")
+        if (parts.size != 3) return null
+        return try {
+            val h = parts[0].toLong() * 3600_000
+            val m = parts[1].toLong() * 60_000
+            val s = (parts[2].toDouble() * 1000).toLong()
+            h + m + s
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -89,10 +129,16 @@ object AudioConverter {
         return dest
     }
 
-    private fun probeDuration(path: String): Double {
-        val session = FFprobeKit.execute("-v error -show_entries format=duration -of csv=p=0 \"$path\"")
-        val out = session.allLogsAsString.trim()
-        return out.toDoubleOrNull() ?: 0.0
+    private fun probeDuration(context: Context, uri: Uri): Long {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, uri)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            0L
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
     }
 
     private fun publishToMediaStore(context: Context, mp3File: File, displayName: String): Uri {
