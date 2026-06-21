@@ -1,0 +1,6 @@
+<resources>
+    <color name="white">#FFFFFFFF</color>
+    <color name="apple_blue">#FF0071E3</color>
+    <color name="apple_text">#FF1D1D1F</color>
+    <color name="apple_secondary">#FF86868B</color>
+</resources>
