@@ -3,7 +3,7 @@ name: Build APK
 on:
   push:
     branches: [main, master]
-  workflow_dispatch:  # allow manual trigger
+  workflow_dispatch:
 
 jobs:
   build:
@@ -27,28 +27,154 @@ jobs:
     - name: Install Python build tools
       run: pip install buildozer cython
 
-    - name: Download Android FFmpeg binaries
+    - name: Download Android NDK
       run: |
-        FFMPEG_VERSION="6.0"
-        BASE_URL="https://github.com/arthenica/ffmpeg-kit/releases/download/v${FFMPEG_VERSION}"
+        NDK_VERSION="r23c"
+        NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
+        wget -q "https://dl.google.com/android/repository/${NDK_ZIP}"
+        unzip -q ${NDK_ZIP}
+        echo "NDK_HOME=$(pwd)/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+        echo "NDK downloaded to $(pwd)/android-ndk-${NDK_VERSION}"
 
-        # ARM64 (arm64-v8a)
-        mkdir -p ffmpeg/arm64-v8a
-        wget -q "${BASE_URL}/ffmpeg-kit-full-gpl-${FFMPEG_VERSION}-android-arm64.aar" -O arm64.aar
-        unzip -q arm64.aar -d arm64_extract
-        mv arm64_extract/jni/arm64-v8a/ffmpeg ffmpeg/arm64-v8a/ffmpeg
-        mv arm64_extract/jni/arm64-v8a/ffprobe ffmpeg/arm64-v8a/ffprobe 2>/dev/null || true
-        rm -rf arm64_extract arm64.aar
+    - name: Build LAME for Android (arm64)
+      run: |
+        NDK="${{ env.NDK_HOME }}"
+        TOOLCHAIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64"
 
-        # ARMv7 (armeabi-v7a)
-        mkdir -p ffmpeg/armeabi-v7a
-        wget -q "${BASE_URL}/ffmpeg-kit-full-gpl-${FFMPEG_VERSION}-android-armv7a.aar" -O armv7a.aar
-        unzip -q armv7a.aar -d armv7a_extract
-        mv armv7a_extract/jni/armeabi-v7a/ffmpeg ffmpeg/armeabi-v7a/ffmpeg
-        mv armv7a_extract/jni/armeabi-v7a/ffprobe ffmpeg/armeabi-v7a/ffprobe 2>/dev/null || true
-        rm -rf armv7a_extract armv7a.aar
+        # Build LAME for arm64-v8a
+        wget -q https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz -O lame.tar.gz
+        tar xzf lame.tar.gz
+        cd lame-3.100
 
-        echo "FFmpeg binaries downloaded and placed."
+        export CC="${TOOLCHAIN}/bin/aarch64-linux-android21-clang"
+        export AR="${TOOLCHAIN}/bin/llvm-ar"
+        export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+        export STRIP="${TOOLCHAIN}/bin/llvm-strip"
+
+        ./configure --host=aarch64-linux-android --prefix=$(pwd)/../lame-arm64 --enable-static --disable-shared --with-pic
+        make -j$(nproc) && make install
+        cd ..
+
+    - name: Build FFmpeg for Android (arm64)
+      run: |
+        NDK="${{ env.NDK_HOME }}"
+        TOOLCHAIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64"
+
+        wget -q https://ffmpeg.org/releases/ffmpeg-6.1.tar.xz -O ffmpeg.tar.xz
+        tar xf ffmpeg.tar.xz
+        cd ffmpeg-6.1
+
+        export CC="${TOOLCHAIN}/bin/aarch64-linux-android21-clang"
+        export CXX="${TOOLCHAIN}/bin/aarch64-linux-android21-clang++"
+        export AR="${TOOLCHAIN}/bin/llvm-ar"
+        export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+        export STRIP="${TOOLCHAIN}/bin/llvm-strip"
+
+        ./configure \
+          --enable-cross-compile \
+          --cross-prefix=${TOOLCHAIN}/bin/aarch64-linux-android- \
+          --target-os=android \
+          --arch=aarch64 \
+          --cpu=armv8-a \
+          --cc="${CC}" \
+          --cxx="${CXX}" \
+          --ar="${AR}" \
+          --ranlib="${RANLIB}" \
+          --strip="${STRIP}" \
+          --pkg-config=pkg-config \
+          --enable-static \
+          --disable-shared \
+          --enable-small \
+          --disable-programs \
+          --disable-doc \
+          --disable-ffplay \
+          --disable-ffprobe \
+          --disable-avdevice \
+          --disable-postproc \
+          --disable-network \
+          --enable-libmp3lame \
+          --enable-gpl \
+          --extra-cflags="-I$(pwd)/../lame-arm64/include" \
+          --extra-ldflags="-L$(pwd)/../lame-arm64/lib"
+
+        make -j$(nproc)
+        mkdir -p ../ffmpeg/arm64-v8a
+        cp ffmpeg ../ffmpeg/arm64-v8a/ffmpeg
+        ${TOOLCHAIN}/bin/llvm-strip ../ffmpeg/arm64-v8a/ffmpeg
+        cd ..
+
+    - name: Build LAME for Android (armv7)
+      run: |
+        NDK="${{ env.NDK_HOME }}"
+        TOOLCHAIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64"
+
+        cd lame-3.100
+
+        export CC="${TOOLCHAIN}/bin/armv7a-linux-androideabi21-clang"
+        export AR="${TOOLCHAIN}/bin/llvm-ar"
+        export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+        export STRIP="${TOOLCHAIN}/bin/llvm-strip"
+
+        make clean 2>/dev/null || true
+        ./configure --host=armv7a-linux-androideabi --prefix=$(pwd)/../lame-armv7 --enable-static --disable-shared --with-pic
+        make -j$(nproc) && make install
+        cd ..
+
+    - name: Build FFmpeg for Android (armv7)
+      run: |
+        NDK="${{ env.NDK_HOME }}"
+        TOOLCHAIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64"
+
+        tar xf ffmpeg.tar.xz
+        cd ffmpeg-6.1
+
+        export CC="${TOOLCHAIN}/bin/armv7a-linux-androideabi21-clang"
+        export CXX="${TOOLCHAIN}/bin/armv7a-linux-androideabi21-clang++"
+        export AR="${TOOLCHAIN}/bin/llvm-ar"
+        export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+        export STRIP="${TOOLCHAIN}/bin/llvm-strip"
+
+        ./configure \
+          --enable-cross-compile \
+          --cross-prefix=${TOOLCHAIN}/bin/arm-linux-androideabi- \
+          --target-os=android \
+          --arch=arm \
+          --cpu=armv7-a \
+          --cc="${CC}" \
+          --cxx="${CXX}" \
+          --ar="${AR}" \
+          --ranlib="${RANLIB}" \
+          --strip="${STRIP}" \
+          --pkg-config=pkg-config \
+          --enable-static \
+          --disable-shared \
+          --enable-small \
+          --disable-programs \
+          --disable-doc \
+          --disable-ffplay \
+          --disable-ffprobe \
+          --disable-avdevice \
+          --disable-postproc \
+          --disable-network \
+          --enable-libmp3lame \
+          --enable-gpl \
+          --extra-cflags="-I$(pwd)/../lame-armv7/include" \
+          --extra-ldflags="-L$(pwd)/../lame-armv7/lib"
+
+        make -j$(nproc)
+        mkdir -p ../ffmpeg/armeabi-v7a
+        cp ffmpeg ../ffmpeg/armeabi-v7a/ffmpeg
+        ${TOOLCHAIN}/bin/llvm-strip ../ffmpeg/armeabi-v7a/ffmpeg
+        cd ..
+
+    - name: Verify FFmpeg binaries
+      run: |
+        echo "=== ARM64 binary ==="
+        file ffmpeg/arm64-v8a/ffmpeg
+        ls -lh ffmpeg/arm64-v8a/ffmpeg
+        echo "=== ARMv7 binary ==="
+        file ffmpeg/armeabi-v7a/ffmpeg
+        ls -lh ffmpeg/armeabi-v7a/ffmpeg
 
     - name: Build APK with Buildozer
       run: |
