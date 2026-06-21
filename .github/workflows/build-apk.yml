@@ -1,0 +1,63 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openjdk-17-jdk-headless autoconf libtool pkg-config \
+          libltdl-dev libffi-dev python3-dev unzip zip
+
+    - name: Install Python build tools
+      run: pip install buildozer cython
+
+    - name: Download Android FFmpeg binaries
+      run: |
+        FFMPEG_VERSION="6.0"
+        BASE_URL="https://github.com/arthenica/ffmpeg-kit/releases/download/v${FFMPEG_VERSION}"
+
+        # ARM64 (arm64-v8a)
+        mkdir -p ffmpeg/arm64-v8a
+        wget -q "${BASE_URL}/ffmpeg-kit-full-gpl-${FFMPEG_VERSION}-android-arm64.aar" -O arm64.aar
+        unzip -q arm64.aar -d arm64_extract
+        mv arm64_extract/jni/arm64-v8a/ffmpeg ffmpeg/arm64-v8a/ffmpeg
+        mv arm64_extract/jni/arm64-v8a/ffprobe ffmpeg/arm64-v8a/ffprobe 2>/dev/null || true
+        rm -rf arm64_extract arm64.aar
+
+        # ARMv7 (armeabi-v7a)
+        mkdir -p ffmpeg/armeabi-v7a
+        wget -q "${BASE_URL}/ffmpeg-kit-full-gpl-${FFMPEG_VERSION}-android-armv7a.aar" -O armv7a.aar
+        unzip -q armv7a.aar -d armv7a_extract
+        mv armv7a_extract/jni/armeabi-v7a/ffmpeg ffmpeg/armeabi-v7a/ffmpeg
+        mv armv7a_extract/jni/armeabi-v7a/ffprobe ffmpeg/armeabi-v7a/ffprobe 2>/dev/null || true
+        rm -rf armv7a_extract armv7a.aar
+
+        echo "FFmpeg binaries downloaded and placed."
+
+    - name: Build APK with Buildozer
+      run: |
+        export BUILDOZER_WSL_ON_HEADLESS=1
+        buildozer android debug 2>&1 | tee build.log
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: MP4转MP3-APK
+        path: bin/*.apk
+        retention-days: 90
